@@ -1,0 +1,403 @@
+#set($assetLinkLocalService = $serviceLocator.findService("com.liferay.portlet.asset.service.AssetLinkLocalService" ))
+#set($assetEntryLocalService = $serviceLocator.findService("com.liferay.portlet.asset.service.AssetEntryLocalService" ))
+#set($journalArticleLocalService = $serviceLocator.findService("com.liferay.portlet.journal.service.JournalArticleLocalService" ))
+#set($propertyFactoryUtil = $serviceLocator.findService("com.liferay.portal.kernel.dao.orm.PropertyFactoryUtil"))
+#set($Integer = 0)
+
+#macro(setXPathStringProperty_v6 $property $root $name)
+    #set( $tempNode = false )
+    #set( $property = false )
+    #set( $xPathSelector = $saxReaderUtil.createXPath("//dynamic-element[@name='$name']") )
+    #set( $tempNode = $xPathSelector.selectSingleNode($root) )
+    #if ($tempNode)
+        #set( $property = $tempNode.getStringValue().trim() )
+    #end
+#end
+
+#macro(processEvent_v6g $entry)
+    #set( $renderer = $entry.getAssetRenderer() )
+    #set( $journalArticle = $renderer.getArticle() )
+    #set( $document = $saxReaderUtil.read($journalArticle.getContent()) )
+    #set( $rootElement = $document.getRootElement() )
+    
+    #setXPathStringProperty_v6($endDate, $rootElement, "endDate")
+    #set( $endDate = $getterUtil.getLong($endDate))
+    
+    ## there has to be a better way to do this...
+    ## structure dates are stored in utc, but the times are for the selected time zone...
+    
+    #if( ($endDate + 86400000) > $dateTool.getDate().getTime() )
+    
+        #setXPathStringProperty_v6($startDate, $rootElement, "startDate")
+        #setXPathStringProperty_v6($startTime, $rootElement, "startTime")
+        #setXPathStringProperty_v6($endTime, $rootElement, "endTime")
+        #setXPathStringProperty_v6($eDescription, $rootElement, "description")
+        #setXPathStringProperty_v6($eTitle, $rootElement, "eventTitle")
+        #setXPathStringProperty_v6($eRegisterLink, $rootElement, "registrationUrl")
+        #setXPathStringProperty_v6($eContactInfo, $rootElement, "contact")
+        #setXPathStringProperty_v6($eDirectionsLink, $rootElement, "directionsUrl")
+        
+        #set ( $current_event = 
+                {
+                    "startDate": $getterUtil.getLong($startDate),
+                    "startDateText": $dateTool.format("EEEEE, M/d/yy", $getterUtil.getLong($startDate), $locale),
+                    "startTime": $startTime,
+                    "endDate": $endDate,
+                    "endDateText": $dateTool.format("EEEEE, M/d/yy", $getterUtil.getLong($endDate), $locale),
+                    "endTime": $endTime,
+                    "description": $eDescription,
+                    "contact": $eContactInfo,
+                    "title": $eTitle,
+                    "registerLink": $eRegisterLink,
+                    "directionsLink": $eDirectionsLink
+                } ) 
+        #set( $stupid = $events.add($current_event) )
+                                      
+        #set($currentArticleRelatedLinks = $assetLinkLocalService.getDirectLinks($entry.getEntryId()))
+        #foreach( $link in $currentArticleRelatedLinks )
+            #set($linkedAssetEntryId = $link.getEntryId2())
+            #set($linkedAssetEntry = $assetEntryLocalService.getEntry($linkedAssetEntryId))
+            
+            #set($renderer = $linkedAssetEntry.getAssetRenderer() )
+            #set($className = $renderer.getClassName() )
+            
+            #if( $className == "com.liferay.portlet.journal.model.JournalArticle" )
+                ## Check if journal article and if structure is map pin structure
+                ## ALERT: Make sure Id is correct on export/import (Also, 1 off problem...)
+                #set( $journalArticle = $renderer.getArticle() )
+                #if( $journalArticle.getStructureId() == "565902" )
+                    #set( $document = $saxReaderUtil.read($journalArticle.getContent()) )
+                    #set( $rootElement = $document.getRootElement() )
+                    
+                    #set( $title = $journalArticle.getTitle($locale))
+                    #setXPathStringProperty_v6($iwText, $rootElement, "Info_Window_Text")
+                    #setXPathStringProperty_v6($lat, $rootElement, "Latitude")
+                    #setXPathStringProperty_v6($lng, $rootElement, "Longitude")
+                    
+                    #set( $mpId =  $title.trim().toLowerCase().replace(" & ", " and ").replace("-", " ").replaceAll("\s+", "-").replaceAll("[^A-Za-z0-9-]+", "") )
+                    
+                    #if( ! $pins.containsKey($mpId))
+                        #set ( $pin = { "id": $mpId,
+                                        "name": $title, 
+                                        "description": $iwText,
+                                        "lat": $lat, 
+                                        "lng": $lng,
+                                        "events": []
+                                    } ) 
+                        #set ( $stupid = $pins.put($mpId, $pin) )
+                    #else
+                        #set ( $pin = $pins.get($mpId) )
+                    #end
+                    
+                    #set($stupid  = $pin.events.add($current_event))
+                #end   
+            #end
+        #end  
+    #end
+#end
+
+#set( $pins = { } )
+#set( $events = [] )
+#set( $days = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"] )
+
+#if (!$entries.isEmpty())
+    #foreach ($curEntry in $entries)
+        #set( $renderer = $curEntry.getAssetRenderer() )
+        #set( $className = $renderer.getClassName() )
+        #if( $className == "com.liferay.portlet.journal.model.JournalFolder")
+            #set( $folderArticles = $JournalArticleLocalService.getArticles($curEntry.getGroupId(), $curEntry.getClassPK()) )
+            #foreach($fa in $folderArticles) 
+                #if( $JournalArticleLocalService.isLatestVersion($fa.getGroupId(), $fa.getArticleId(), $fa.getVersion()) && $fa.getStatus() == 0)
+                    #processEvent_v6g($fa)
+                #end
+            #end
+        #elseif ( $className == "com.liferay.portlet.journal.model.JournalArticle" )
+            #processEvent_v6g($curEntry)
+        #end
+    #end
+    
+    <style>
+     #map { width:100%; height:500px; margin:0 0 10px; }
+     .info-window { }
+     
+     #aoc .aoc-accordion__container {
+     padding:0 0 0 10px;
+     }
+     .selected-pin {
+     background-color:#EEE;
+     margin-bottom:20px;
+     }
+     #map-controls select {
+        position:static;
+     }
+     
+     .twrap {
+        margin-bottom:10px;
+     }
+     
+     .info-window li {
+        margin-bottom:0;
+     }
+     
+     #aoc .aoc-calendar__event-content {
+        display:none;
+        position:fixed;
+        max-height:90%;
+        max-width:90%;
+        width:540px;
+        left:50%; top:50%; 
+        transform: translate(-50%, -50%);
+        overflow:auto;
+     }
+     
+     #aoc .aoc-calendar__event-name {
+        padding-right:20px
+     }
+    </style>
+
+    <div id="map"></div>
+    
+    <script type="text/javascript">
+    var pins = [
+	    #foreach ($pin in $pins)
+            {id: "$pin.id", 
+             name: "$escapeTool.javascript($pin.name)",
+             description: "$escapeTool.javascript($pin.description)",
+             position: {
+                lat: $pin.lat, 
+                lng: $pin.lng
+            },
+            events: [
+            #foreach ($hevent in $pin.events)
+                { 
+                    startDate: $escapeTool.javascript($hevent.startDate),
+                    startDateText: "$escapeTool.javascript($hevent.startDateText)",
+                    startTime: "$escapeTool.javascript($hevent.startTime)",
+                    endDate: $escapeTool.javascript($hevent.endDate),
+                    endDateText: "$escapeTool.javascript($hevent.endDateText)",
+                    endTime: "$escapeTool.javascript($hevent.endTime)",
+                    title: "$escapeTool.javascript($hevent.title)",
+                    description: "$escapeTool.javascript($hevent.description)",
+                    contact: "$escapeTool.javascript($hevent.contact)",
+                    registerLink: "$escapeTool.javascript($hevent.registerLink)",
+                    directionsLink: "$escapeTool.javascript($hevent.directionsLink)"
+                }#if( $velocityHasNext ),#end
+            #end
+            ]}#if( $velocityHasNext ),#end
+        #end
+    ];
+    
+	 var markers = [];
+	 var icons = [];
+	 
+	 var infoWindow, map, icon;
+	 
+	 var days = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"];
+	 
+	 var selectedPin;
+	 
+	 var eventInfoWindow, eiwTitle, eiwPlace, eiwDate, eiwTime, eiwDescription;
+	 
+	 function eiclick(id) {
+		if(selectedPin) {
+			selectedPin.classList.remove("selected-pin");	
+		}
+		selectedPin = document.getElementById(id);
+		selectedPin.classList.add("selected-pin");
+	    if(!selectedPin.classList.contains("aoc-accordion__container--expanded")){
+	        selectedPin.getElementsByClassName("aoc-accordion__header")[0].click();
+	    }
+	 }
+	 
+	 function initMap() {
+	 
+	    map = new google.maps.Map(document.getElementById("map"), { center: {lat:42, lng:-87.8}, zoom:8 });
+	    infoWindow = new google.maps.InfoWindow();
+	    
+	    sw = {lat:42, lng:-87.8}, ne = {lat:42, lng:-87.8};
+	    
+	    var iconSize = new google.maps.Size(40, 53);
+	    var iconScaledSize = new google.maps.Size(22, 30);
+	    
+	    icon = { 
+                url: 'https://www.archchicago.org/aoc-maps-portlet/html/AocParishesMap/app/images/map-marker--red.png', 
+                scaledSize: new google.maps.Size(22, 30)
+	    }
+	    
+	    eventInfoWindow = $('#MapEventInfo');
+	    eiwTitle = $('#MapEventInfo .aoc-calendar__event-name');
+	    eiwPlace = $('#MapEventInfo .aoc-calendar__event-detail-row--place .aoc-calendar__event-detail-row--info');
+	    eiwDate = $('#MapEventInfo .aoc-calendar__event-detail-row--date .aoc-calendar__event-detail-row--info');
+	    eiwTime = $('#MapEventInfo .aoc-calendar__event-detail-row--time .aoc-calendar__event-detail-row--info');
+	    eiwDescription = $('#MapEventInfo .aoc-calendar__event-detail-row--description .aoc-calendar__event-detail-row--info');
+	    eiwRegisterLink = $('#MapEventInfo .aoc-calendar__event-button');
+	    $('#MapEventInfo .aoc-calendar__event-window-close').click(function() { eventInfoWindow.hide(); });
+	    
+	    //setup markers
+	    for(var i = 0; i < pins.length; i++) {
+	        var marker = new google.maps.Marker({ 
+	            map: null, 
+	            position: pins[i].position, 
+	            title: pins[i].name,
+	            icon: icon
+	        });
+	        
+	        marker.addListener('click', function(j) { 
+	            return function() { 
+	                infoWindow.close();
+	                infoWindow.setContent(getInfoWindowContent(pins[j]));
+	                infoWindow.open(map, markers[j]); 
+	           } 
+	        }(i));
+	        
+	        markers.push(marker);
+	        pins[i].marker = marker
+	    }
+	    
+	    if(document.location.hash) {
+	        focusMap(document.location.hash.substring(1));
+	    } else {
+	        filterMarkers();
+	    }
+	 }
+	 
+	 var sw, ne;
+	 
+	 function filterMarkers() {
+		//in nw quad
+		sw = {lat:90, lng:0}, ne = {lat:0, lng:-180};
+		var resultCount = 0;
+	    for(var i = 0; i < pins.length; i++) {
+	        var pin = pins[i];
+			resultCount++;
+            pin.marker.setMap(map);
+            sw.lat = Math.min(sw.lat, pin.position.lat);
+            sw.lng = Math.min(sw.lng, pin.position.lng);
+            ne.lat = Math.max(ne.lat, pin.position.lat);
+            ne.lng = Math.max(ne.lng, pin.position.lng);
+	    }
+		if(resultCount > 0) 
+			map.fitBounds(new google.maps.LatLngBounds(sw, ne));
+			
+		if(map.getZoom() > 15)
+			map.setZoom(15);
+			
+		infoWindow.close();
+		
+		return resultCount;
+	 }
+	 
+	 var iwhtml = '<div class="info-window"><p><strong>@@name</strong></p>' + 
+			'@@description' +
+			'@@event-list' +
+			'<p><a href="#@@identifier" onclick="eiclick(\'@@identifier\')">More Information</a></p></div>';
+	 
+	 function getInfoWindowContent(pin) {
+	    var html = iwhtml.replace('@@name', pin.name).replace('@@description', pin.description).replace(/@@identifier/g, pin.id);
+	    if(pin.events.length > 0) {
+    	    var elhtml = "<p>Upcoming events:</p><ul>";
+    	    for(var i = 0; i < pin.events.length; i++) {
+    	        elhtml += "<li>" + pin.events[i].title + " - " + pin.events[i].startDateText + "</li>";
+    	    }
+	        elhtml += "</ul>";
+	        html = html.replace('@@event-list', elhtml);
+	    }
+	    else {
+	        html = html.replace('@@event-list', '');
+	    }
+	    return html
+	 }
+	 
+	 function focusMap(id) {
+	    for(var i = 0; i < pins.length; i++) {
+	        var pin = pins[i]
+	        if(pin.id === id) {
+	            pin.marker.setMap(map);
+	            map.setZoom(15);
+	            map.setCenter(pin.position);
+	            infoWindow.close();
+                infoWindow.setContent(getInfoWindowContent(pin));
+                infoWindow.open(map, pin.marker); 
+	        }
+	    }
+	    document.getElementById("map").scrollIntoView();
+	 }
+	 
+	 function showEventInfo(pinIndex, eventIndex) {
+	    eiwTitle.html(pins[pinIndex].events[eventIndex].title);
+	    eiwPlace.html(pins[pinIndex].events[eventIndex].place);
+	    eiwDate.html(pins[pinIndex].events[eventIndex].startDate);
+	    eiwTime.html(pins[pinIndex].events[eventIndex].startTime);
+	    eiwDescription.html(pins[pinIndex].events[eventIndex].description);
+	    if(pins[pinIndex].events[eventIndex].registerLink) {
+	        eiwRegisterLink.attr("href", pins[pinIndex].events[eventIndex].registerLink);
+	        eiwRegisterLink.show();
+	    } else {
+	        eiwRegisterLink.attr("href", "");
+	        eiwRegisterLink.hide();
+	    }
+	    eventInfoWindow.show();
+	 }
+
+</script>
+	
+	<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA-P9dDtxHGJopuoF_u5ZmCEE7iUqdZEC4&callback=initMap"
+    async defer></script>
+    
+    <div class="aoc-accordion" role="tablist" aria-multiselectable="true">
+    #foreach ($pin in $pins)
+        #set($accordionItemId = $pin.id)
+        #set($pinIndex = $velocityCount - 1)
+        <div id="$accordionItemId" class="aoc-accordion__container">
+            <div class="aoc-accordion__header" role="tab">
+                <a href="#$accordionItemId" role="button" aria-expanded="false" aria-controls="$accordionItemId">$pin.name</a>
+                <svg class="aoc-accordion__chevron">
+                    <use xlink:href="/aoc-theme/resources/svg/svg-sprite.svg#chevron-right" />
+                </svg>
+            </div>
+            <div class="aoc-accordion__body" aria-expanded="false">
+                    $pin.description
+                    <p><a href="#map" onclick="focusMap('$pin.id'); return false">View on map</a></p>
+                    
+        	        #if( !$pins.events.isEmpty() )
+        	            <p>Events:</p>
+        	            <ul>
+                        #foreach( $ev in $pin.events )
+                            #set( $eventIndex = $velocityCount - 1 )
+                            <li>
+                                <p><strong>$ev.title</strong></p>
+                                <div class="twrap">$ev.description</div>
+                                <p>$ev.startDateText, $ev.startTime</p>
+                                <div class="twrap">$ev.contact</div>
+                                #if( $ev.registerLink && $ev.registerLink.length() > 0 )
+                                <a class="aoc-calendar__event-button aoc-calendar__event-button--register" href="$ev.registerLink" target="_blank"><button class="aoc-button" type="button">Register</button></a>
+                                #end
+                                #if( $ev.directionsLink && $ev.directionsLink.length() > 0 ) 
+                                <a class="aoc-calendar__event-button aoc-calendar__event-button--register" href="$ev.directionsLink" target="_blank"><button class="aoc-button" type="button">Directions</button></a>
+                                #end
+                            </li>
+                        #end
+                        </ul>
+    	           #end
+    	        <svg class="aoc-accordion__close">
+                    <use xlink:href="/aoc-theme/resources/svg/svg-sprite.svg#close" />
+                </svg>
+            </div>
+        </div>
+	#end
+    </div>
+#end
+<div id="MapEventInfo" class="aoc-calendar__event-content">
+  <div class="aoc-calendar__event-window-header">
+    <h3 class="aoc-hearders-h3 aoc-calendar__event-name"></h3>
+    <svg class="aoc-calendar__event-window-close">
+    <use xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="/aoc-theme/resources/svg/svg-sprite.svg#close"></use>
+    </svg> 
+  </div>
+  <div class="aoc-calendar__event-detail-row aoc-calendar__event-detail-row--description">
+    <div class="aoc-calendar__event-detail-row--info"></div>
+  </div>
+  <a class="aoc-calendar__event-button aoc-calendar__event-button--register" href="" style="display: none;">
+    <button class="aoc-button" type="button" id="yui_patched_v3_11_0_1_1499885648456_956">Register</button>
+  </a>
+</div>

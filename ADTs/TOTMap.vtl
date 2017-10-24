@@ -1,0 +1,448 @@
+#set($assetLinkLocalService = $serviceLocator.findService("com.liferay.portlet.asset.service.AssetLinkLocalService" ))
+#set($assetEntryLocalService = $serviceLocator.findService("com.liferay.portlet.asset.service.AssetEntryLocalService" ))
+
+#set($Integer = 0)
+
+#macro(setXPathStringProperty_v6 $property $root $name)
+    #set( $tempNode = false )
+    #set( $property = false )
+    #set( $xPathSelector = $saxReaderUtil.createXPath("//dynamic-element[@name='$name']") )
+    #set( $tempNode = $xPathSelector.selectSingleNode($root) )
+    #if ($tempNode)
+        #set( $property = $tempNode.getStringValue().trim() )
+    #end
+#end
+
+#set( $hosts = [] )
+#set( $cities = {} )
+#set( $tracks = ["Serve it", "Learn it", "Grow it"] )
+#set( $days = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"] )
+
+#if (!$entries.isEmpty())
+    #foreach ($curEntry in $entries)
+        #set($renderer = $curEntry.getAssetRenderer() )
+        #set($className = $renderer.getClassName() )
+        #if( $className == "com.liferay.portlet.journal.model.JournalArticle" )
+        
+            #set( $journalArticle = $renderer.getArticle() )
+            #set( $document = $saxReaderUtil.read($journalArticle.getContent()) )
+            #set( $rootElement = $document.getRootElement() )
+            #setXPathStringProperty_v6($hostName, $rootElement, "Host_Name")
+            #setXPathStringProperty_v6($hostDescription, $rootElement, "Host_Description")
+            #setXPathStringProperty_v6($lat, $rootElement, "Latitude")
+            #setXPathStringProperty_v6($lng, $rootElement, "Longitude")
+            #setXPathStringProperty_v6($line1, $rootElement, "Line_1")
+            #setXPathStringProperty_v6($line2, $rootElement, "Line_2")
+            #setXPathStringProperty_v6($city, $rootElement, "City")
+            #setXPathStringProperty_v6($state, $rootElement, "State")
+            #setXPathStringProperty_v6($zip, $rootElement, "Zip")
+            #setXPathStringProperty_v6($track, $rootElement, "Track")    
+            #setXPathStringProperty_v6($day, $rootElement, "Day")
+            
+            #if(!$cities.containsKey($city))
+                #set( $stupid = $cities.put($city, 1) )
+            #else
+                #set( $tcount = $cities.get($city) + 1 )
+                #set( $stupid = $cities.put($city, $tcount) )
+            #end
+            
+            #set ( $th = { "id": $hostName.trim().toLowerCase().replace("-", " ").replaceAll("\s+", "-").replaceAll("[^A-Za-z0-9-]+", ""),
+                                            "name": $hostName, 
+                                            "description": $hostDescription,
+                                            "lat": $lat, 
+                                            "lng": $lng,
+                                            "address1": $line1,
+                                            "address2": $line2,
+                                            "city": $city,
+                                            "state": $state,
+                                            "zip": $zip,
+                                            "day": $day,
+                                            "track": $track,
+                                            "entry": $curEntry,
+                                            "events": []
+                                          } ) 
+            #set($currentArticleRelatedLinks = $assetLinkLocalService.getDirectLinks($curEntry.getEntryId()))
+            #foreach( $link in $currentArticleRelatedLinks )
+            
+                #set($linkedAssetEntryId = $link.getEntryId2())
+                #set($linkedAssetEntry = $assetEntryLocalService.getEntry($linkedAssetEntryId))
+                
+                #set($renderer = $linkedAssetEntry.getAssetRenderer() )
+                #set($className = $renderer.getClassName() )
+                #if( $className == "com.liferay.portlet.journal.model.JournalArticle" )
+                    #set( $journalArticle = $renderer.getArticle() )
+                    #set( $document = $saxReaderUtil.read($journalArticle.getContent()) )
+                    #set( $rootElement = $document.getRootElement() )
+                    #setXPathStringProperty_v6($startDate, $rootElement, "startDate")
+                    #setXPathStringProperty_v6($startTime, $rootElement, "startTime")
+                    #setXPathStringProperty_v6($eDescription, $rootElement, "description")
+                    #setXPathStringProperty_v6($eTitle, $rootElement, "eventTitle")
+                    #setXPathStringProperty_v6($eRegisterLink, $rootElement, "registrationUrl")
+                    #set ( $stupid = $th.events.add(
+                    {
+                        "startDate": $dateTool.format("E M/d", $getterUtil.getLong($startDate), $locale),
+                        "startTime": $startTime,
+                        "description": $eDescription,
+                        "title": $eTitle,
+                        "registerLink": $eRegisterLink
+                    }) )
+                #end
+            #end    
+                       
+            #set ( $stupid = $hosts.add($th) )
+        #end
+    #end
+    <style>
+     #map { width:100%; height:500px; margin:0 0 10px; }
+     .info-window { }
+     
+     #aoc .aoc-accordion__container {
+     padding:0 0 0 10px;
+     }
+     .selected-host {
+     background-color:#EEE;
+     margin-bottom:20px;
+     }
+     #map-controls select {
+        position:static;
+     }
+     
+     #aoc .aoc-calendar__event-content {
+        display:none;
+        position:fixed;
+        max-height:90%;
+        max-width:90%;
+        width:540px;
+        left:50%; top:50%; 
+        transform: translate(-50%, -50%);
+        overflow:auto;
+     }
+     
+     #aoc .aoc-calendar__event-name {
+        padding-right:20px
+     }
+    </style>
+
+    <div id="map"></div>
+    <div id="map-controls">
+        <select id="DaySelect">
+            <option value="-1">Any Day</option>
+            <option value="0">Sundays</option>
+            <option value="1">Mondays</option>
+            <option value="2">Tuesdays</option>
+            <option value="3">Wednesdays</option>
+            <option value="4">Thursdays</option>
+            <option value="5">Fridays</option>
+            <option value="6">Saturdays</option>
+        </select>
+        <select id="TrackSelect">
+            <option value="-1">Any Track</option>
+            <option value="0">Serve it (Red)</option>
+            <option value="1">Learn it (Green)</option>
+            <option value="2">Grow it (Blue)</option>
+        </select>
+    </div>
+    <script type="text/javascript">
+    var hosts = [
+	    #foreach ($host in $hosts)
+            {id: "$host.id", 
+             name: "$escapeTool.javascript($host.name)",
+             description: "$escapeTool.javascript($host.description)",
+             position: {
+                lat: $host.lat, 
+                lng: $host.lng
+            },
+            address: {
+                line1: "$escapeTool.javascript($host.address1)",
+                line2: "$escapeTool.javascript($host.address2)",
+                city: "$escapeTool.javascript($host.city)",
+                state: "$escapeTool.javascript($host.state)",
+                zip: "$escapeTool.javascript($host.zip)"
+            },
+            events: [
+            #foreach ($hevent in $host.events)
+                { 
+                    startDate: "$hevent.startDate",
+                    startTime: "$hevent.startTime",
+                    title: "$escapeTool.javascript($hevent.title)",
+                    description: "$escapeTool.javascript($hevent.description)",
+                    registerLink: "$escapeTool.javascript($hevent.registerLink)"
+                }#if( $velocityHasNext ),#end
+            #end
+            ],
+            track: $host.track,
+            day: $host.day}#if( $velocityHasNext ),#end
+        #end
+    ];
+    
+    var cities = [
+        #foreach ( $key in $cities.keySet() )
+            {
+             name: "$escapeTool.javascript($key)",
+             count: $cities.get($key)
+            }#if( $velocityHasNext ),#end
+        #end
+    ];
+    
+	 var markers = [];
+	 var icons = [];
+	 
+	 var infoWindow, map, icon;
+	 
+	 var tracks = ["Family", "Evangelization", "Formation"];
+	 var days = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"];
+	 
+	 var selectedHost;
+	 
+	 var eventInfoWindow, eiwTitle, eiwPlace, eiwDate, eiwTime, eiwDescription;
+	 
+	 function eiclick(id) {
+		if(selectedHost) {
+			selectedHost.classList.remove("selected-host");	
+		}
+		selectedHost = document.getElementById(id);
+		selectedHost.classList.add("selected-host");
+	    if(!selectedHost.classList.contains("aoc-accordion__container--expanded")){
+	        selectedHost.getElementsByClassName("aoc-accordion__header")[0].click();
+	    }
+	 }
+	 
+	 function initTOTMap() {
+	 
+	    map = new google.maps.Map(document.getElementById("map"), { center: {lat:42, lng:-87.8}, zoom:8 });
+	    sw = {lat:42, lng:-87.8}, ne = {lat:42, lng:-87.8};
+	    var iconSize = new google.maps.Size(40, 53);
+	    var iconScaledSize = new google.maps.Size(22, 30);
+	    
+	    //generate icons
+	    for(var l = 0; l < tracks.length; l++) {
+	        for(var m = 0; m < days.length; m++) {
+    	        icons.push(
+    	        { 
+	                url: 'https://pvm.archchicago.org/documents/87254/277635/tot-map-markers.png/2d341202-38bb-4fce-af5e-bdf57c5099f7?t=1491942889000',
+	                origin: new google.maps.Point(m*iconSize.width, l*iconSize.height),
+	                size: iconSize
+    	        });
+	        }
+	    }
+	    
+	    infoWindow = new google.maps.InfoWindow();
+	    eventInfoWindow = $('.aoc-calendar__event-content');
+	    eiwTitle = $('.aoc-calendar__event-name');
+	    eiwPlace = $('.aoc-calendar__event-detail-row--place .aoc-calendar__event-detail-row--info');
+	    eiwDate = $('.aoc-calendar__event-detail-row--date .aoc-calendar__event-detail-row--info');
+	    eiwTime = $('.aoc-calendar__event-detail-row--time .aoc-calendar__event-detail-row--info');
+	    eiwDescription = $('.aoc-calendar__event-detail-row--description .aoc-calendar__event-detail-row--info');
+	    eiwRegisterLink = $('.aoc-calendar__event-button');
+	    $('.aoc-calendar__event-window-close').click(function() { eventInfoWindow.hide(); });
+	    
+	    for(var i = 0; i < hosts.length; i++) {
+	        var marker = new google.maps.Marker({ 
+	            map: null, 
+	            position: hosts[i].position, 
+	            title: hosts[i].name,
+	            icon: icons[hosts[i].track * days.length + hosts[i].day]
+	        });
+	        
+	        marker.addListener('click', function(j) { 
+	            return function() { 
+	                infoWindow.close();
+	                infoWindow.setContent(getInfoWindowContent(hosts[j]));
+	                infoWindow.open(map, markers[j]); 
+	           } 
+	        }(i));
+	        
+	        markers.push(marker);
+	        hosts[i].marker = marker
+	    }
+	    
+	    //setup search controls
+	    daySelect = document.getElementById("DaySelect");
+		daySelect.onchange = filterMarkers;
+		trackSelect = document.getElementById("TrackSelect");
+		trackSelect.onchange = filterMarkers;
+		
+	    citySelect = document.createElement("select");
+	    citySelect.onchange = filterMarkers;
+	    citySelect.appendChild(createSelectOption("Any City", -1));
+	    for(var i = 0; i < cities.length; i++) {
+	        var c = cities[i];
+	        citySelect.appendChild(createSelectOption(c.name + " (" + c.count + ")", c.name));
+	    }
+	    document.getElementById("map-controls").appendChild(citySelect);
+	    
+	    if(document.location.hash) {
+	        focusMap(document.location.hash.substring(1));
+	    } else {
+	        filterMarkers();
+	    }
+	 }
+	 
+	 var daySelect, trackSelect, citySelect;
+	 
+	 var sw, ne;
+	 
+	 function filterMarkers() {
+		//in nw quad
+		sw = {lat:90, lng:0}, ne = {lat:0, lng:-180};
+		var resultCount = 0;
+	    for(var i = 0; i < hosts.length; i++) {
+	        var host = hosts[i];
+	        if(filterSelect(host, "day", daySelect.value) && 
+	        filterSelect(host, "track", trackSelect.value) &&
+	        filterSelect(host, "address.city", citySelect.value)) {
+				resultCount++;
+	            host.marker.setMap(map);
+	            sw.lat = Math.min(sw.lat, host.position.lat);
+	            sw.lng = Math.min(sw.lng, host.position.lng);
+	            ne.lat = Math.max(ne.lat, host.position.lat);
+	            ne.lng = Math.max(ne.lng, host.position.lng);
+	        } else {
+	            host.marker.setMap(null);
+	        }
+	    }
+		if(resultCount > 0) 
+			map.fitBounds(new google.maps.LatLngBounds(sw, ne));
+			
+		if(map.getZoom() > 15)
+			map.setZoom(15);
+			
+		infoWindow.close();
+		
+		return resultCount;
+	 }
+	 
+	 function resetFilters() {
+	    daySelect.selectedIndex = 0;
+	    trackSelect.selectedIndex = 0;
+	    citySelect.selectedIndex = 0;
+	 }
+	 
+	 function filterSelect(o, property, value) {
+		if(value === "-1")
+			return true;
+		else {
+		    var tvalue = parseInt(value);
+		    value = isNaN(tvalue) ? value : tvalue;
+		    var path = property.split('.');
+		    for(var i = 0; i < path.length; i++) { o = o[path[i]]; }
+			return o === value;
+		}
+	 }
+	 
+	 function createSelectOption(text, value) {
+		var optionElement = document.createElement("option");
+	 	optionElement.innerText = text;
+		optionElement.value = value;
+		return optionElement;
+	 }
+	 
+	 
+	 function getInfoWindowContent(host) {
+		 
+		var html = '<div class="info-window"><p><strong>name</strong></p>' + 
+			'<p>address</p>' +
+			'<p><a href="#identifier" onclick="eiclick(\'identifier\')">Event Information</a></p></div>';
+		
+		 var address = host.address.line1 + '<br />' + (host.address.line2 ? host.address.line2 + '<br />' : '') + host.address.city + ', ' + host.address.state + ' ' + host.address.zip; 
+		 
+	    return html.replace('name', host.name).replace('address', address).replace(/identifier/g, host.id);
+	 }
+	 
+	 function focusMap(id) {
+	    for(var i = 0; i < hosts.length; i++) {
+	        var host = hosts[i]
+	        if(host.id === id) {
+	            resetFilters();
+	            host.marker.setMap(map);
+	            map.setZoom(15);
+	            map.setCenter(host.position);
+	            infoWindow.close();
+                infoWindow.setContent(getInfoWindowContent(host));
+                infoWindow.open(map, host.marker); 
+	        } else {
+	            host.marker.setMap(null);
+	        }
+	    }
+	    document.getElementById("map").scrollIntoView();
+	 }
+	 
+	 function showEventInfo(hostIndex, eventIndex) {
+	    eiwTitle.html(hosts[hostIndex].events[eventIndex].title);
+	    eiwPlace.html(hosts[hostIndex].events[eventIndex].place);
+	    eiwDate.html(hosts[hostIndex].events[eventIndex].startDate);
+	    eiwTime.html(hosts[hostIndex].events[eventIndex].startTime);
+	    eiwDescription.html(hosts[hostIndex].events[eventIndex].description);
+	    if(hosts[hostIndex].events[eventIndex].registerLink) {
+	        eiwRegisterLink.attr("href", hosts[hostIndex].events[eventIndex].registerLink);
+	        eiwRegisterLink.show();
+	    } else {
+	        eiwRegisterLink.attr("href", "");
+	        eiwRegisterLink.hide();
+	    }
+	    eventInfoWindow.show();
+	 }
+
+</script>
+	
+	<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA-P9dDtxHGJopuoF_u5ZmCEE7iUqdZEC4&callback=initTOTMap"
+    async defer></script>
+    
+    <div class="aoc-accordion" role="tablist" aria-multiselectable="true">
+    #foreach ($host in $hosts)
+        #set($accordionItemId = $host.id)
+        #set($hostIndex = $velocityCount - 1)
+        <div id="$accordionItemId" class="aoc-accordion__container">
+            <div class="aoc-accordion__header" role="tab">
+                <a href="#$accordionItemId" role="button" aria-expanded="false" aria-controls="$accordionItemId">$host.name</a>
+                <svg class="aoc-accordion__chevron">
+                    <use xlink:href="/aoc-theme/resources/svg/svg-sprite.svg#chevron-right" />
+                </svg>
+            </div>
+            <div class="aoc-accordion__body" aria-expanded="false">
+                    <p>$host.address1<br />
+                    #if(!$host.address2.isEmpty())$host.address2<br />#end
+                    $host.city, $host.state $host.zip<br />
+                    <a href="#map" onclick="focusMap('$host.id'); return false">View on map</a>
+                    </p>
+                    <p>Track: $tracks.get($Integer.parseInt($host.track))</p>
+                    <p>Day: $days.get($Integer.parseInt($host.day))</p>
+                    #if($host.description)
+                    <p>$host.description</p>
+                    #end
+                    
+        	        #if( !$host.events.isEmpty() )
+        	            <p>Sessions:</p>
+        	            <ul>
+                        #foreach( $ev in $host.events )
+                            #set( $eventIndex = $velocityCount - 1 )
+                            <li>
+                                $ev.startDate, $ev.startTime - $ev.title (<a href="#" onclick="showEventInfo($hostIndex, $eventIndex); return false">Details</a>)
+                            </li>
+                        #end
+                        </ul>
+                    #else                
+    	                <p>Check back soon for session information</p>
+    	           #end
+    	        <svg class="aoc-accordion__close">
+                    <use xlink:href="/aoc-theme/resources/svg/svg-sprite.svg#close" />
+                </svg>
+            </div>
+        </div>
+	#end
+    </div>
+#end
+<div class="aoc-calendar__event-content">
+  <div class="aoc-calendar__event-window-header">
+    <h3 class="aoc-hearders-h3 aoc-calendar__event-name"></h3>
+    <svg class="aoc-calendar__event-window-close">
+    <use xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="/aoc-theme/resources/svg/svg-sprite.svg#close"></use>
+    </svg> 
+  </div>
+  <div class="aoc-calendar__event-detail-row aoc-calendar__event-detail-row--description">
+    <div class="aoc-calendar__event-detail-row--info"></div>
+  </div>
+  <a class="aoc-calendar__event-button aoc-calendar__event-button--register" href="" style="display: none;">
+    <button class="aoc-button" type="button" id="yui_patched_v3_11_0_1_1499885648456_956">Register</button>
+  </a>
+</div>
