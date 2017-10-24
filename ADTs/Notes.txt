@@ -3,12 +3,12 @@ NOTES
 General:
 	- Javascript needs to be properly pulled out of global scope (I think I already did this for Map Pins Map).
 	- I still don't have a full understanding of how Liferay works so I am probably doing some Wrong Things (besides the ones I am probably doing anyway).
-	- Style elements should not be in the body of an html document (nore should they be in a vtl IMO).  This is currently the only way I know of that we have to add style rules to the system.
+	- Style elements should not be in the body of an html document (nor should they be in a vtl IMO).  This is currently the only way I know of that we have to add style rules to the system.
 		- This is how our vendor has been doing it, which is strange because they are able to add style rules to the system...
 		- Perhaps add some javascript to the template to add the style element to the head.  
 		  Does not fix that style rules should probably not be in a vtl, and the javascript code would have to be duplicated in all ADTs
 	- Macros: if a macro is changed, you must change its name because of bizarre caching behavior with our liferay stack (not sure where it's happening)
-	  Also, macros don't know if we can rely on that caching behavior when using other ADTs.  I feel like I tested this and it didn't work, but I will have to test again.
+	  Also, don't know if we can rely on that caching behavior when using other ADTs.  I feel like I tested this and it didn't work, but I will have to test again.
 
 Event Map:
 	Work in progress.  Based on Theology on Tap and Map Pins Map ADTs, so there is still some extraneous code, needs general cleanup
