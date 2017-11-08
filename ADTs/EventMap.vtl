@@ -14,7 +14,7 @@
     #end
 #end
 
-#macro(processEvent_v6g $entry)
+#macro(processEvent_v7b $entry)
     #set( $renderer = $entry.getAssetRenderer() )
     #set( $journalArticle = $renderer.getArticle() )
     #set( $document = $saxReaderUtil.read($journalArticle.getContent()) )
@@ -65,7 +65,8 @@
                 ## Check if journal article and if structure is map pin structure
                 ## ALERT: Make sure Id is correct on export/import (Also, 1 off problem...)
                 #set( $journalArticle = $renderer.getArticle() )
-                #if( $journalArticle.getStructureId() == "565902" )
+                #if( $journalArticle.getStructureId() == "565901" )
+                     
                     #set( $document = $saxReaderUtil.read($journalArticle.getContent()) )
                     #set( $rootElement = $document.getRootElement() )
                     
@@ -108,11 +109,11 @@
             #set( $folderArticles = $JournalArticleLocalService.getArticles($curEntry.getGroupId(), $curEntry.getClassPK()) )
             #foreach($fa in $folderArticles) 
                 #if( $JournalArticleLocalService.isLatestVersion($fa.getGroupId(), $fa.getArticleId(), $fa.getVersion()) && $fa.getStatus() == 0)
-                    #processEvent_v6g($fa)
+                    #processEvent_v7b($fa)
                 #end
             #end
         #elseif ( $className == "com.liferay.portlet.journal.model.JournalArticle" )
-            #processEvent_v6g($curEntry)
+            #processEvent_v7b($curEntry)
         #end
     #end
     
