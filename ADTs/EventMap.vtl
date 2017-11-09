@@ -14,7 +14,7 @@
     #end
 #end
 
-#macro(processEvent_v7b $entry)
+#macro(processEvent_v10 $entry)
     #set( $renderer = $entry.getAssetRenderer() )
     #set( $journalArticle = $renderer.getArticle() )
     #set( $document = $saxReaderUtil.read($journalArticle.getContent()) )
@@ -24,7 +24,7 @@
     #set( $endDate = $getterUtil.getLong($endDate))
     
     ## there has to be a better way to do this...
-    ## structure dates are stored in utc, but the times are for the selected time zone...
+    ## structure dates are stored in utc, but the times are stored in plain text for the selected time zone...
     
     #if( ($endDate + 86400000) > $dateTool.getDate().getTime() )
     
@@ -77,7 +77,7 @@
                     
                     #set( $mpId =  $title.trim().toLowerCase().replace(" & ", " and ").replace("-", " ").replaceAll("\s+", "-").replaceAll("[^A-Za-z0-9-]+", "") )
                     
-                    #if( ! $pins.containsKey($mpId))
+                    #if( !$pins.containsKey($mpId))
                         #set ( $pin = { "id": $mpId,
                                         "name": $title, 
                                         "description": $iwText,
@@ -90,7 +90,7 @@
                         #set ( $pin = $pins.get($mpId) )
                     #end
                     
-                    #set($stupid  = $pin.events.add($current_event))
+                    #set($stupid = $pin.events.add($current_event))
                 #end   
             #end
         #end  
@@ -99,7 +99,6 @@
 
 #set( $pins = { } )
 #set( $events = [] )
-#set( $days = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"] )
 
 #if (!$entries.isEmpty())
     #foreach ($curEntry in $entries)
@@ -109,11 +108,11 @@
             #set( $folderArticles = $JournalArticleLocalService.getArticles($curEntry.getGroupId(), $curEntry.getClassPK()) )
             #foreach($fa in $folderArticles) 
                 #if( $JournalArticleLocalService.isLatestVersion($fa.getGroupId(), $fa.getArticleId(), $fa.getVersion()) && $fa.getStatus() == 0)
-                    #processEvent_v7b($fa)
+                    #processEvent_v10($fa)
                 #end
             #end
         #elseif ( $className == "com.liferay.portlet.journal.model.JournalArticle" )
-            #processEvent_v7b($curEntry)
+            #processEvent_v10($curEntry)
         #end
     #end
     
@@ -140,6 +139,10 @@
         margin-bottom:0;
      }
      
+     #aoc .info-window p {
+        margin-top:10px;
+     }
+     
      #aoc .aoc-calendar__event-content {
         display:none;
         position:fixed;
@@ -161,6 +164,8 @@
     <script type="text/javascript">
     var pins = [
 	    #foreach ($pin in $pins)
+	        ##first, sort the events
+	        #set( $pin.events = $sortTool.sort($pin.events, "startDate") )
             {id: "$pin.id", 
              name: "$escapeTool.javascript($pin.name)",
              description: "$escapeTool.javascript($pin.description)",
@@ -192,8 +197,6 @@
 	 var icons = [];
 	 
 	 var infoWindow, map, icon;
-	 
-	 var days = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"];
 	 
 	 var selectedPin;
 	 
